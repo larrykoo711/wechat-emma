@@ -930,6 +930,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "toml",
+ "wechat-emma",
 ]
 
 [[package]]
