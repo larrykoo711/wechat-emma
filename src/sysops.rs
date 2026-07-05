@@ -135,11 +135,29 @@ mod mock {
                 .borrow_mut()
                 .push(format!("ditto {src:?} {dst:?}"));
             self.apps.borrow_mut().insert(dst.to_path_buf());
+            // When the destination lives under a writable directory (tests use a
+            // tempdir), materialize a minimal bundle with a seed Info.plist so the
+            // real plist-editing step in the build pipeline can run end-to-end.
+            let contents = dst.join("Contents");
+            if std::fs::create_dir_all(&contents).is_ok() {
+                let mut dict = plist::Dictionary::new();
+                dict.insert(
+                    "CFBundleIdentifier".into(),
+                    plist::Value::String("com.tencent.xinWeChat".into()),
+                );
+                dict.insert(
+                    "CFBundleShortVersionString".into(),
+                    plist::Value::String("4.1.11".into()),
+                );
+                dict.insert("CFBundleURLTypes".into(), plist::Value::Array(vec![]));
+                let _ = plist::Value::Dictionary(dict).to_file_xml(contents.join("Info.plist"));
+            }
             Ok(())
         }
         fn remove_dir(&self, path: &Path) -> Result<()> {
             self.calls.borrow_mut().push(format!("remove_dir {path:?}"));
             self.apps.borrow_mut().remove(path);
+            let _ = std::fs::remove_dir_all(path);
             Ok(())
         }
         fn clear_xattr(&self, path: &Path) -> Result<()> {
