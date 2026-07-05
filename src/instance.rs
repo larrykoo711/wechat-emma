@@ -2,8 +2,9 @@
 
 use crate::config::Config;
 use crate::error::{Error, Result};
+use crate::plist_edit;
 use crate::sysops::SystemOps;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Instance {
@@ -51,6 +52,36 @@ impl<'a, S: SystemOps> InstanceSet<'a, S> {
             bundle_id: format!("{}{}", self.cfg.bundle_id_base, idx),
             display_name: format!("{}{}", self.cfg.display_base, idx),
         }
+    }
+
+    /// Build (or rebuild) the copy at `idx` from `wechat_app`, running the full
+    /// duplicate → rebrand → strip-update-keys → ad-hoc-sign → verify pipeline.
+    pub fn build(&self, idx: u8, wechat_app: &Path) -> Result<Instance> {
+        let inst = self.instance_for(idx);
+        let dst = &inst.app_path;
+
+        if self.ops.app_exists(dst) {
+            self.ops
+                .kill_matching(&format!("{}/Contents/MacOS/", dst.display()))?;
+            self.ops.remove_dir(dst)?;
+        }
+
+        self.ops.ditto(wechat_app, dst)?;
+
+        let plist = dst.join("Contents/Info.plist");
+        plist_edit::apply_copy_edits(
+            &plist,
+            &inst.bundle_id,
+            &inst.display_name,
+            &inst.display_name,
+        )?;
+
+        self.ops.clear_xattr(dst)?;
+        self.ops.remove_dir(&dst.join("Contents/_CodeSignature"))?;
+        self.ops.codesign(dst)?;
+        self.ops.verify_signature(dst)?;
+
+        Ok(inst)
     }
 }
 
@@ -103,5 +134,36 @@ mod tests {
         assert_eq!(inst.bundle_id, "com.tencent.xinWeChat.multi3");
         assert_eq!(inst.display_name, "WeChat3");
         assert!(inst.app_path.ends_with("WeChat-B3.app"));
+    }
+
+    #[test]
+    fn build_runs_full_pipeline_in_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let apps = dir.path().to_path_buf();
+        let ops = MockSystemOps::new();
+        let cfg = Config::default();
+        let wechat = apps.join("WeChat.app");
+        // The mock's ditto materializes a seed bundle, so the source only needs
+        // to be marked present for any pre-checks.
+        ops.set_app(&wechat, true);
+        let set = InstanceSet::new(&ops, &cfg, apps.clone());
+
+        let inst = set.build(1, &wechat).unwrap();
+        assert_eq!(inst.index, 1);
+
+        // The rebranded, key-stripped plist was written by the real edit step.
+        let plist = apps.join("WeChat-B1.app/Contents/Info.plist");
+        assert_eq!(
+            crate::plist_edit::read_string(&plist, "CFBundleIdentifier")
+                .unwrap()
+                .as_deref(),
+            Some("com.tencent.xinWeChat.multi1")
+        );
+
+        // Full pipeline ran in order: ditto → codesign → verify.
+        let calls = ops.calls();
+        let pos = |needle: &str| calls.iter().position(|c| c.contains(needle));
+        assert!(pos("ditto").unwrap() < pos("codesign").unwrap());
+        assert!(pos("codesign").unwrap() < pos("verify").unwrap());
     }
 }
