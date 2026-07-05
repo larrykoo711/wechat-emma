@@ -1,0 +1,69 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Build both architectures
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+      - name: Create universal binary
+        run: |
+          mkdir -p dist
+          lipo -create -output dist/wxemma \
+            target/aarch64-apple-darwin/release/wxemma \
+            target/x86_64-apple-darwin/release/wxemma
+          cd dist
+          tar -czf wxemma-macos-universal.tar.gz wxemma
+          shasum -a 256 wxemma-macos-universal.tar.gz > wxemma-macos-universal.tar.gz.sha256
+      - name: Publish release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          files: |
+            dist/wxemma-macos-universal.tar.gz
+            dist/wxemma-macos-universal.tar.gz.sha256
+
+  update-tap:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute formula
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Reject anything that is not a clean vMAJOR.MINOR.PATCH tag.
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "unexpected tag: $TAG" >&2
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          URL="https://github.com/larrykoo711/wechat-emma/releases/download/${TAG}/wxemma-macos-universal.tar.gz"
+          curl -fsSL "$URL" -o pkg.tar.gz
+          SHA=$(shasum -a 256 pkg.tar.gz | awk '{print $1}')
+          curl -fsSL "https://raw.githubusercontent.com/larrykoo711/wechat-emma/${TAG}/packaging/wxemma.rb.tmpl" -o tmpl.rb
+          sed -e "s|__VERSION__|${VERSION}|" -e "s|__URL__|${URL}|" -e "s|__SHA__|${SHA}|" tmpl.rb > wxemma.rb
+      - name: Push to tap
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/larrykoo711/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          cp wxemma.rb tap/Formula/wxemma.rb
+          cd tap
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add Formula/wxemma.rb
+          git commit -m "wxemma ${TAG}"
+          git push

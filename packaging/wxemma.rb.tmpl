@@ -1,0 +1,16 @@
+class Wxemma < Formula
+  desc "Run multiple WeChat instances on macOS"
+  homepage "https://github.com/larrykoo711/wechat-emma"
+  version "__VERSION__"
+  url "__URL__"
+  sha256 "__SHA__"
+  license "MIT"
+
+  def install
+    bin.install "wxemma"
+  end
+
+  test do
+    assert_match "wxemma", shell_output("#{bin}/wxemma --version")
+  end
+end
