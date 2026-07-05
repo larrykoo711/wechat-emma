@@ -1,5 +1,10 @@
 //! Rendering of command results as colored human text or structured JSON.
+//!
+//! JSON output is a stable, English, machine-facing contract (agents parse it),
+//! so the `kind`/`value` payload is never localized. Human-facing text IS
+//! localized via the i18n catalog.
 
+use rust_i18n::t;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
@@ -25,7 +30,10 @@ pub enum Report {
         rows: Vec<InstanceRow>,
         stale: bool,
     },
+    /// A message identified by an i18n catalog key (localized for humans).
     Message(String),
+    /// An already-rendered literal string (not localized further).
+    Text(String),
 }
 
 pub fn render(report: &Report, json: bool) -> String {
@@ -34,23 +42,26 @@ pub fn render(report: &Report, json: bool) -> String {
         return serde_json::to_string_pretty(&body).unwrap();
     }
     match report {
-        Report::Message(m) => m.clone(),
-        Report::Added(row) => format!("Created instance {} ({})", row.index, row.name),
+        // The payload is a catalog key; translate it for humans.
+        Report::Message(key) => t!(key.as_str()).to_string(),
+        Report::Text(s) => s.clone(),
+        Report::Added(row) => t!("report.created", index = row.index, name = row.name).to_string(),
         Report::Removed { index, purged } => {
             if purged.is_empty() {
-                format!("Removed instance {index} (account data kept)")
+                t!("report.removed_kept", index = index).to_string()
             } else {
-                format!(
-                    "Removed instance {index} (purged {} data paths)",
-                    purged.len()
-                )
+                t!("report.removed_purged", index = index, count = purged.len()).to_string()
             }
         }
         Report::List(rows) => {
             let mut out = String::new();
             for r in rows {
                 let note = r.note.as_deref().unwrap_or("");
-                let state = if r.running { "running" } else { "stopped" };
+                let state = if r.running {
+                    t!("list.state_running")
+                } else {
+                    t!("list.state_stopped")
+                };
                 out.push_str(&format!(
                     "[{}] {}  {}  {}  {}\n",
                     r.index, r.name, r.version, state, note
@@ -63,12 +74,12 @@ pub fn render(report: &Report, json: bool) -> String {
             rows,
             stale,
         } => {
-            let mut out = format!("Original WeChat: {original_version}\n");
+            let mut out = format!("{}\n", t!("status.original", version = original_version));
             for r in rows {
                 out.push_str(&format!("[{}] {}  {}\n", r.index, r.name, r.version));
             }
             if *stale {
-                out.push_str("Some copies are behind; run `wxemma rebuild`.");
+                out.push_str(&t!("status.stale"));
             }
             out.trim_end().to_string()
         }
