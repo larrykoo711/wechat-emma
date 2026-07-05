@@ -1,0 +1,33 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Build both architectures
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+      - name: Create universal binary
+        run: |
+          mkdir -p dist
+          lipo -create -output dist/wxemma \
+            target/aarch64-apple-darwin/release/wxemma \
+            target/x86_64-apple-darwin/release/wxemma
+          cd dist
+          tar -czf wxemma-macos-universal.tar.gz wxemma
+          shasum -a 256 wxemma-macos-universal.tar.gz > wxemma-macos-universal.tar.gz.sha256
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/wxemma-macos-universal.tar.gz
+            dist/wxemma-macos-universal.tar.gz.sha256
