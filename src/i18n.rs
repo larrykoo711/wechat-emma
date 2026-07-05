@@ -3,7 +3,11 @@
 /// Resolve to `"zh-CN"` or `"en"`: explicit flag first, then `LANG`, else `en`.
 pub fn resolve_locale(explicit: Option<&str>, env_lang: Option<&str>) -> &'static str {
     if let Some(flag) = explicit {
-        return if flag.starts_with("zh") { "zh-CN" } else { "en" };
+        return if flag.starts_with("zh") {
+            "zh-CN"
+        } else {
+            "en"
+        };
     }
     match env_lang {
         Some(l) if l.starts_with("zh") => "zh-CN",
