@@ -1,0 +1,19 @@
+app.name: wechat-emma
+msg.launched: "已启动。"
+msg.killed: "已结束所有副本进程（原版微信不受影响）。"
+msg.rebuilt: "已基于当前微信版本重建所有副本。"
+msg.no_instances_open: "没有可启动的副本。"
+msg.no_instances_remove: "没有可删除的副本。"
+msg.cancelled: "已取消。"
+report.created: "已创建副本 %{index}（%{name}）。"
+report.removed_kept: "已删除副本 %{index}（保留账号数据）。"
+report.removed_purged: "已删除副本 %{index}（清理了 %{count} 处数据）。"
+status.original: "原版微信：%{version}"
+status.stale: "有副本版本落后，请执行 `wxemma rebuild` 重建。"
+doctor.wechat_found: "微信：已找到"
+doctor.wechat_missing: "微信：未在 %{path} 找到"
+prompt.index_to_remove: "要删除的编号"
+prompt.confirm_remove: "确认删除副本 %{index}？"
+prompt.confirm_purge: "是否同时删除该副本的账号数据（聊天记录、登录态）？"
+list.state_running: 运行中
+list.state_stopped: 已停止

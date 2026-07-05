@@ -1,0 +1,19 @@
+app.name: wechat-emma
+msg.launched: "Launched."
+msg.killed: "All copy processes terminated (original WeChat untouched)."
+msg.rebuilt: "All copies rebuilt from the current WeChat version."
+msg.no_instances_open: "No instances to launch."
+msg.no_instances_remove: "No instances to remove."
+msg.cancelled: "Cancelled."
+report.created: "Created instance %{index} (%{name})."
+report.removed_kept: "Removed instance %{index} (account data kept)."
+report.removed_purged: "Removed instance %{index} (removed %{count} data locations)."
+status.original: "Original WeChat: %{version}"
+status.stale: "Some copies are behind; run `wxemma rebuild`."
+doctor.wechat_found: "WeChat: found"
+doctor.wechat_missing: "WeChat: not found at %{path}"
+prompt.index_to_remove: "Index to remove"
+prompt.confirm_remove: "Remove instance %{index}?"
+prompt.confirm_purge: "Also delete this instance's account data (chat history, login)?"
+list.state_running: running
+list.state_stopped: stopped

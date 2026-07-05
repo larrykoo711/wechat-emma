@@ -1,0 +1,46 @@
+[package]
+name = "wechat-emma"
+version = "0.1.0"
+edition = "2021"
+description = "A macOS efficiency CLI for running multiple WeChat instances"
+license = "MIT"
+repository = "https://github.com/larrykoo711/wechat-emma"
+readme = "README.md"
+rust-version = "1.74"
+
+[[bin]]
+name = "wxemma"
+path = "src/main.rs"
+
+[lib]
+name = "wechat_emma"
+path = "src/lib.rs"
+
+[features]
+# Exposes MockSystemOps to external integration tests.
+testing = []
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+clap_complete = "4"
+dialoguer = "0.11"
+plist = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+rust-i18n = "3"
+thiserror = "1"
+anyhow = "1"
+owo-colors = "4"
+dirs = "5"
+
+[dev-dependencies]
+tempfile = "3"
+# Self-reference with the testing feature so integration tests in tests/ can use
+# MockSystemOps, which is gated behind cfg(any(test, feature = "testing")).
+wechat-emma = { path = ".", features = ["testing"] }
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
