@@ -151,3 +151,39 @@ fn remove_existing_index_succeeds() {
     }
     assert!(!ctx.ops.app_exists(&app2));
 }
+
+#[test]
+fn remove_purge_refuses_foreign_owned_container() {
+    // Data-loss regression guard: if the container that would be purged is owned
+    // by the ORIGINAL app (not this copy), purging must be refused rather than
+    // deleting the original's data.
+    let dir = tempfile::tempdir().unwrap();
+    let (ops, cfg, apps, wechat) = ctx_with(&[2], &dir);
+    ops.set_root(true);
+    // Pretend the multi2 container is actually owned by the original bundle id.
+    let home = dirs::home_dir().unwrap();
+    let container = home
+        .join("Library/Containers")
+        .join("com.tencent.xinWeChat.multi2");
+    ops.set_container_owner(&container, "com.tencent.xinWeChat");
+    let mut ctx = Ctx {
+        ops: &ops,
+        cfg,
+        apps_dir: apps,
+        wechat_app: wechat,
+        json: true,
+        yes: true,
+    };
+    let err = dispatch(
+        &mut ctx,
+        &Commands::Remove {
+            index: Some(2),
+            purge_data: true,
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        wechat_emma::error::Error::RefusedForeignContainer { .. }
+    ));
+}

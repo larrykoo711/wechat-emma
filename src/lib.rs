@@ -6,6 +6,7 @@ pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod data;
+pub mod entitlements;
 pub mod error;
 pub mod i18n;
 pub mod instance;
