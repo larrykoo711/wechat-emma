@@ -216,6 +216,7 @@ pub fn dispatch<S: SystemOps>(ctx: &mut Ctx<S>, cmd: &Commands) -> Result<Report
                 .into(),
             ))
         }
-        Commands::Completions { .. } => Ok(Report::Text(String::new())),
+        // Help is handled in the binary layer before dispatch.
+        Commands::Help | Commands::Completions { .. } => Ok(Report::Text(String::new())),
     }
 }

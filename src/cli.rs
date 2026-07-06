@@ -7,7 +7,8 @@ use clap::{Parser, Subcommand};
     name = "wxemma",
     about = "Run multiple WeChat instances on macOS",
     disable_version_flag = true,
-    disable_help_flag = true
+    disable_help_flag = true,
+    disable_help_subcommand = true
 )]
 pub struct Cli {
     /// Print the logo and version, then exit.
@@ -67,6 +68,8 @@ pub enum Commands {
     Doctor,
     /// Set the preferred language (`zh` or `en`), saved to the config file.
     Lang { value: String },
+    /// Show this help.
+    Help,
     /// Emit a shell completion script.
     Completions { shell: clap_complete::Shell },
 }

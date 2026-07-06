@@ -1,6 +1,6 @@
 [package]
 name = "wechat-emma"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "A macOS efficiency CLI for running multiple WeChat instances"
 license = "MIT"
