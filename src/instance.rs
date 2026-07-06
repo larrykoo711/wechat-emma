@@ -54,8 +54,29 @@ impl<'a, S: SystemOps> InstanceSet<'a, S> {
         }
     }
 
+    /// A one-word danger tag if the copy at `idx` is unsafe, else `None`. Right
+    /// now the check that matters: a copy whose bundle id is NOT its expected
+    /// `…multi{N}` shares the original's data container and can corrupt it.
+    pub fn danger_tag(&self, idx: u8) -> Option<&'static str> {
+        let expected = format!("{}{}", self.cfg.bundle_id_base, idx);
+        let plist = self.app_path_for(idx).join("Contents/Info.plist");
+        match plist_edit::read_string(&plist, "CFBundleIdentifier") {
+            Ok(Some(id)) if id == expected => None,
+            // Wrong id, missing id, or unreadable plist → treat as dangerous.
+            _ => Some("danger.shared_bundle_id"),
+        }
+    }
+
     /// Build (or rebuild) the copy at `idx` from `wechat_app`, running the full
     /// duplicate → rebrand → strip-update-keys → ad-hoc-sign → verify pipeline.
+    ///
+    /// Data isolation comes from the bundle id, not a sandbox: WeChat derives its
+    /// data container path from `CFBundleIdentifier`, so a copy whose id is
+    /// `…multi{N}` writes to its own `Containers/…multi{N}` and never touches the
+    /// original. The critical invariant is therefore that the rebrand actually
+    /// took — a copy left on the ORIGINAL bundle id would share the original's
+    /// container and corrupt it. `build` verifies the rebranded id before signing
+    /// and refuses to produce a copy that is still on the original id.
     pub fn build(&self, idx: u8, wechat_app: &Path) -> Result<Instance> {
         let inst = self.instance_for(idx);
         let dst = &inst.app_path;
@@ -76,25 +97,34 @@ impl<'a, S: SystemOps> InstanceSet<'a, S> {
             &inst.display_name,
         )?;
 
+        // Data-loss guard: confirm the copy is really on its own bundle id. If the
+        // rebrand did not stick, the copy would share the original's data
+        // container; delete the half-built copy and fail loudly rather than ship a
+        // dangerous one.
+        self.assert_rebranded(dst, &inst.bundle_id)?;
+
         self.ops.clear_xattr(dst)?;
         self.ops.remove_dir(&dst.join("Contents/_CodeSignature"))?;
-
-        // Re-sign carrying a minimal entitlements set that KEEPS app-sandbox, so
-        // the copy gets its own container instead of falling back to the
-        // original's — this is the fix for the data-loss bug. See the
-        // `entitlements` module for why team-scoped keys are dropped.
-        let ent_path = dst
-            .parent()
-            .unwrap_or_else(|| Path::new("/tmp"))
-            .join(format!(".{}.entitlements.plist", inst.index));
-        std::fs::write(&ent_path, crate::entitlements::sandbox_only_plist())?;
-        let sign_result = self.ops.codesign(dst, &ent_path);
-        let _ = std::fs::remove_file(&ent_path);
-        sign_result?;
-
+        self.ops.codesign(dst)?;
         self.ops.verify_signature(dst)?;
 
         Ok(inst)
+    }
+
+    /// Fail (after removing the copy) unless `dst`'s bundle id equals
+    /// `expected_id`. Guards against a half-applied rebrand leaving a copy on the
+    /// original id, which would make it share the original's data container.
+    fn assert_rebranded(&self, dst: &Path, expected_id: &str) -> Result<()> {
+        let plist = dst.join("Contents/Info.plist");
+        let actual = plist_edit::read_string(&plist, "CFBundleIdentifier")?;
+        if actual.as_deref() == Some(expected_id) {
+            return Ok(());
+        }
+        let _ = self.ops.remove_dir(dst);
+        Err(Error::RebrandFailed {
+            expected: expected_id.to_string(),
+            found: actual.unwrap_or_else(|| "<missing>".into()),
+        })
     }
 }
 
@@ -181,29 +211,60 @@ mod tests {
     }
 
     #[test]
-    fn build_signs_with_entitlements_to_keep_sandbox() {
-        // Regression guard for the data-loss bug: the copy MUST be signed with
-        // an entitlements file (keeping app-sandbox), never a bare ad-hoc
-        // signature that strips the sandbox and lets it write the original's
-        // container.
+    fn build_succeeds_when_rebrand_takes() {
+        // Happy path: the mock's ditto seeds the original bundle id, build
+        // rewrites it to multi{N}, and the rebrand check passes.
         let dir = tempfile::tempdir().unwrap();
         let apps = dir.path().to_path_buf();
         let ops = MockSystemOps::new();
         let cfg = Config::default();
         let wechat = apps.join("WeChat.app");
         ops.set_app(&wechat, true);
-        let set = InstanceSet::new(&ops, &cfg, apps);
+        let set = InstanceSet::new(&ops, &cfg, apps.clone());
 
         set.build(1, &wechat).unwrap();
 
-        let codesign_call = ops
-            .calls()
-            .into_iter()
-            .find(|c| c.contains("codesign"))
-            .expect("codesign must run");
-        assert!(
-            codesign_call.contains("--entitlements"),
-            "copy must be signed WITH entitlements to keep the sandbox, got: {codesign_call}"
+        let plist = apps.join("WeChat-B1.app/Contents/Info.plist");
+        assert_eq!(
+            crate::plist_edit::read_string(&plist, "CFBundleIdentifier")
+                .unwrap()
+                .as_deref(),
+            Some("com.tencent.xinWeChat.multi1")
         );
+    }
+
+    #[test]
+    fn build_refuses_copy_left_on_original_bundle_id() {
+        // Data-loss regression guard. This is the exact failure that corrupted
+        // the user's data: a copy left on the ORIGINAL bundle id shares the
+        // original's data container. If the rebrand does not stick, build must
+        // delete the copy and fail with RebrandFailed — never ship it.
+        let dir = tempfile::tempdir().unwrap();
+        let apps = dir.path().to_path_buf();
+        let ops = MockSystemOps::new();
+        let cfg = Config::default();
+        let wechat = apps.join("WeChat.app");
+        ops.set_app(&wechat, true);
+        let set = InstanceSet::new(&ops, &cfg, apps.clone());
+
+        // Simulate a half-built copy stuck on the original id by directly
+        // asserting the invariant checker rejects it.
+        let dst = apps.join("WeChat-B1.app");
+        std::fs::create_dir_all(dst.join("Contents")).unwrap();
+        let mut d = plist::Dictionary::new();
+        d.insert(
+            "CFBundleIdentifier".into(),
+            plist::Value::String("com.tencent.xinWeChat".into()),
+        );
+        plist::Value::Dictionary(d)
+            .to_file_xml(dst.join("Contents/Info.plist"))
+            .unwrap();
+
+        let err = set
+            .assert_rebranded(&dst, "com.tencent.xinWeChat.multi1")
+            .unwrap_err();
+        assert!(matches!(err, crate::error::Error::RebrandFailed { .. }));
+        // The dangerous half-built copy was removed.
+        assert!(!dst.exists());
     }
 }

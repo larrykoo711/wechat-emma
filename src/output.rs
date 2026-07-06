@@ -4,8 +4,31 @@
 //! so the `kind`/`value` payload is never localized. Human-facing text IS
 //! localized via the i18n catalog.
 
+use owo_colors::OwoColorize;
 use rust_i18n::t;
 use serde::Serialize;
+
+/// One human-readable instance line. A dangerous copy is rendered in red with a
+/// warning so it can't be mistaken for a healthy instance.
+fn render_row(r: &InstanceRow) -> String {
+    let note = r.note.as_deref().unwrap_or("");
+    if let Some(warn) = &r.danger {
+        return format!("[{}] {}  ⚠️  {}", r.index, r.name, warn)
+            .red()
+            .to_string();
+    }
+    let state = if r.running {
+        t!("list.state_running")
+    } else {
+        t!("list.state_stopped")
+    };
+    format!(
+        "[{}] {}  {}  {}  {}",
+        r.index, r.name, r.version, state, note
+    )
+    .trim_end()
+    .to_string()
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct InstanceRow {
@@ -14,6 +37,10 @@ pub struct InstanceRow {
     pub version: String,
     pub note: Option<String>,
     pub running: bool,
+    /// Set when the copy is unsafe (e.g. still on the original bundle id, which
+    /// would share the original's data). Rendered in red with a warning.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub danger: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,16 +83,8 @@ pub fn render(report: &Report, json: bool) -> String {
         Report::List(rows) => {
             let mut out = String::new();
             for r in rows {
-                let note = r.note.as_deref().unwrap_or("");
-                let state = if r.running {
-                    t!("list.state_running")
-                } else {
-                    t!("list.state_stopped")
-                };
-                out.push_str(&format!(
-                    "[{}] {}  {}  {}  {}\n",
-                    r.index, r.name, r.version, state, note
-                ));
+                out.push_str(&render_row(r));
+                out.push('\n');
             }
             out.trim_end().to_string()
         }
@@ -76,7 +95,8 @@ pub fn render(report: &Report, json: bool) -> String {
         } => {
             let mut out = format!("{}\n", t!("status.original", version = original_version));
             for r in rows {
-                out.push_str(&format!("[{}] {}  {}\n", r.index, r.name, r.version));
+                out.push_str(&render_row(r));
+                out.push('\n');
             }
             if *stale {
                 out.push_str(&t!("status.stale"));
@@ -116,17 +136,28 @@ mod tests {
         assert_eq!(v["error"]["code"], serde_json::json!("SlotsFull"));
     }
 
-    #[test]
-    fn human_list_contains_indices() {
-        let rows = vec![InstanceRow {
-            index: 1,
-            name: "WeChat1".into(),
+    fn row(index: u8, danger: Option<&str>) -> InstanceRow {
+        InstanceRow {
+            index,
+            name: format!("WeChat{index}"),
             version: "4.1".into(),
             note: None,
             running: false,
-        }];
-        let s = render(&Report::List(rows), false);
+            danger: danger.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn human_list_contains_indices() {
+        let s = render(&Report::List(vec![row(1, None)]), false);
         assert!(s.contains("1"));
         assert!(s.contains("WeChat1"));
+    }
+
+    #[test]
+    fn dangerous_copy_shows_warning() {
+        let s = render(&Report::List(vec![row(2, Some("shares identity"))]), false);
+        assert!(s.contains("⚠️"));
+        assert!(s.contains("shares identity"));
     }
 }
