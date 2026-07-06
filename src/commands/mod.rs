@@ -189,7 +189,11 @@ pub fn dispatch<S: SystemOps>(ctx: &mut Ctx<S>, cmd: &Commands) -> Result<Report
             };
             ctx.cfg.remove_note(idx);
             let _ = ctx.cfg.save_to(&crate::config::default_config_path());
-            Ok(Report::Removed { index: idx, purged })
+            Ok(Report::Removed {
+                index: idx,
+                purge_requested: *purge_data,
+                purged,
+            })
         }
         Commands::Rebuild => {
             require_root(ctx)?;

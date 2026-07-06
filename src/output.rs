@@ -55,6 +55,9 @@ pub enum Report {
     List(Vec<InstanceRow>),
     Removed {
         index: u8,
+        /// Whether the user asked to also delete the account data. Distinguishes
+        /// "kept data by choice" from "asked to purge, but nothing was there".
+        purge_requested: bool,
         purged: Vec<String>,
     },
     Status {
@@ -78,11 +81,21 @@ pub fn render(report: &Report, json: bool) -> String {
         Report::Message(key) => t!(key.as_str()).to_string(),
         Report::Text(s) => s.clone(),
         Report::Added(row) => t!("report.created", index = row.index, name = row.name).to_string(),
-        Report::Removed { index, purged } => {
-            if purged.is_empty() {
-                t!("report.removed_kept", index = index).to_string()
-            } else {
+        Report::Removed {
+            index,
+            purge_requested,
+            purged,
+        } => {
+            if !purged.is_empty() {
+                // Data was requested and actually removed.
                 t!("report.removed_purged", index = index, count = purged.len()).to_string()
+            } else if *purge_requested {
+                // Data was requested to be removed, but there was none to remove.
+                // Never claim we "kept" it — the user asked us to delete it.
+                t!("report.removed_no_data", index = index).to_string()
+            } else {
+                // User chose to keep the data.
+                t!("report.removed_kept", index = index).to_string()
             }
         }
         Report::List(rows) => {
@@ -191,5 +204,50 @@ mod tests {
         let s = render(&Report::List(vec![row(2, Some("shares identity"))]), false);
         assert!(s.contains("⚠️"));
         assert!(s.contains("shares identity"));
+    }
+
+    #[test]
+    fn removed_kept_when_purge_not_requested() {
+        rust_i18n::set_locale("en");
+        let s = render(
+            &Report::Removed {
+                index: 1,
+                purge_requested: false,
+                purged: vec![],
+            },
+            false,
+        );
+        assert!(s.contains("Kept its data"));
+    }
+
+    #[test]
+    fn removed_purged_reports_count() {
+        rust_i18n::set_locale("en");
+        let s = render(
+            &Report::Removed {
+                index: 1,
+                purge_requested: true,
+                purged: vec!["a".into(), "b".into()],
+            },
+            false,
+        );
+        assert!(s.contains('2'));
+    }
+
+    #[test]
+    fn removed_never_claims_kept_when_purge_requested_but_empty() {
+        // Regression: the user chose to delete the data, so we must not say we
+        // "kept" it — even when there was nothing to delete.
+        rust_i18n::set_locale("en");
+        let s = render(
+            &Report::Removed {
+                index: 1,
+                purge_requested: true,
+                purged: vec![],
+            },
+            false,
+        );
+        assert!(!s.contains("Kept its data"), "must not claim data was kept");
+        assert!(s.contains("none to wipe"));
     }
 }
