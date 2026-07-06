@@ -15,6 +15,10 @@ pub struct Config {
     pub display_base: String,
     #[serde(default = "default_bundle_base")]
     pub bundle_id_base: String,
+    /// Preferred UI language (`"zh"` or `"en"`). When unset, follow the system
+    /// `LANG`. The `--lang` flag overrides this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lang: Option<String>,
     /// Per-instance notes. Keyed by the stringified index because TOML table
     /// keys must be strings; the public `set_note`/`note` API takes `u8`.
     #[serde(default)]
@@ -41,6 +45,7 @@ impl Default for Config {
             prefix: default_prefix(),
             display_base: default_display_base(),
             bundle_id_base: default_bundle_base(),
+            lang: None,
             notes: BTreeMap::new(),
         }
     }
