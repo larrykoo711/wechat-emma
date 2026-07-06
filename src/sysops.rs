@@ -263,7 +263,6 @@ pub use mock::MockSystemOps;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
     #[test]
     fn mock_records_ditto_and_creates_app() {
