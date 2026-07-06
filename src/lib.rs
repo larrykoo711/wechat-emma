@@ -8,6 +8,7 @@ pub mod commands;
 pub mod config;
 pub mod data;
 pub mod error;
+pub mod help;
 pub mod i18n;
 pub mod instance;
 pub mod output;
@@ -34,6 +35,19 @@ pub fn run() -> ExitCode {
     // `--version` / `-V`: print the logo and version, then exit.
     if cli.version {
         println!("{}", banner::version_string());
+        return ExitCode::SUCCESS;
+    }
+
+    // `--help` / `-h`: Chinese page when the locale is Chinese, else clap's
+    // native English help. (clap's auto-help is disabled so we control this.)
+    if cli.help {
+        if locale == "zh-CN" {
+            println!("{}\n{}", banner::startup_banner(), help::zh_help());
+        } else {
+            use clap::CommandFactory;
+            let _ = cli::Cli::command().print_help();
+            println!();
+        }
         return ExitCode::SUCCESS;
     }
 
