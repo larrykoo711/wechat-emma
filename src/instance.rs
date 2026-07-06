@@ -78,7 +78,20 @@ impl<'a, S: SystemOps> InstanceSet<'a, S> {
 
         self.ops.clear_xattr(dst)?;
         self.ops.remove_dir(&dst.join("Contents/_CodeSignature"))?;
-        self.ops.codesign(dst)?;
+
+        // Re-sign carrying a minimal entitlements set that KEEPS app-sandbox, so
+        // the copy gets its own container instead of falling back to the
+        // original's — this is the fix for the data-loss bug. See the
+        // `entitlements` module for why team-scoped keys are dropped.
+        let ent_path = dst
+            .parent()
+            .unwrap_or_else(|| Path::new("/tmp"))
+            .join(format!(".{}.entitlements.plist", inst.index));
+        std::fs::write(&ent_path, crate::entitlements::sandbox_only_plist())?;
+        let sign_result = self.ops.codesign(dst, &ent_path);
+        let _ = std::fs::remove_file(&ent_path);
+        sign_result?;
+
         self.ops.verify_signature(dst)?;
 
         Ok(inst)
@@ -165,5 +178,32 @@ mod tests {
         let pos = |needle: &str| calls.iter().position(|c| c.contains(needle));
         assert!(pos("ditto").unwrap() < pos("codesign").unwrap());
         assert!(pos("codesign").unwrap() < pos("verify").unwrap());
+    }
+
+    #[test]
+    fn build_signs_with_entitlements_to_keep_sandbox() {
+        // Regression guard for the data-loss bug: the copy MUST be signed with
+        // an entitlements file (keeping app-sandbox), never a bare ad-hoc
+        // signature that strips the sandbox and lets it write the original's
+        // container.
+        let dir = tempfile::tempdir().unwrap();
+        let apps = dir.path().to_path_buf();
+        let ops = MockSystemOps::new();
+        let cfg = Config::default();
+        let wechat = apps.join("WeChat.app");
+        ops.set_app(&wechat, true);
+        let set = InstanceSet::new(&ops, &cfg, apps);
+
+        set.build(1, &wechat).unwrap();
+
+        let codesign_call = ops
+            .calls()
+            .into_iter()
+            .find(|c| c.contains("codesign"))
+            .expect("codesign must run");
+        assert!(
+            codesign_call.contains("--entitlements"),
+            "copy must be signed WITH entitlements to keep the sandbox, got: {codesign_call}"
+        );
     }
 }

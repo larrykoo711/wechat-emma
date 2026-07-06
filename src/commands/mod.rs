@@ -135,10 +135,25 @@ pub fn dispatch<S: SystemOps>(ctx: &mut Ctx<S>, cmd: &Commands) -> Result<Report
             ctx.ops.remove_dir(&app)?;
             let purged = if *purge_data {
                 match crate::data::user_home() {
-                    Some(home) => crate::data::purge(&home, &inst.bundle_id)?
-                        .into_iter()
-                        .map(|p| p.display().to_string())
-                        .collect(),
+                    Some(home) => {
+                        // Defense in depth: never purge a container that belongs
+                        // to the original app. containermanagerd records the owner
+                        // bundle id in the container metadata; if what we're about
+                        // to delete is not owned by THIS copy's bundle id, refuse.
+                        let container = home.join("Library/Containers").join(&inst.bundle_id);
+                        if let Some(owner) = ctx.ops.container_owner(&container) {
+                            if owner != inst.bundle_id {
+                                return Err(Error::RefusedForeignContainer {
+                                    expected: inst.bundle_id.clone(),
+                                    found: owner,
+                                });
+                            }
+                        }
+                        crate::data::purge(&home, &inst.bundle_id)?
+                            .into_iter()
+                            .map(|p| p.display().to_string())
+                            .collect()
+                    }
                     None => Vec::new(),
                 }
             } else {

@@ -9,8 +9,15 @@ pub trait SystemOps {
     fn ditto(&self, src: &Path, dst: &Path) -> Result<()>;
     fn remove_dir(&self, path: &Path) -> Result<()>;
     fn clear_xattr(&self, path: &Path) -> Result<()>;
-    fn codesign(&self, path: &Path) -> Result<()>;
+    /// Ad-hoc re-sign `path`, carrying the entitlements in `entitlements_plist`
+    /// (an on-disk plist). Keeping `app-sandbox` is what isolates the copy into
+    /// its own container; see the `entitlements` module.
+    fn codesign(&self, path: &Path, entitlements_plist: &Path) -> Result<()>;
     fn verify_signature(&self, path: &Path) -> Result<()>;
+    /// The container-owner bundle id recorded in a sandbox container's metadata,
+    /// or `None` if the path has no readable container metadata. Used by
+    /// `remove` to refuse deleting data that belongs to the original app.
+    fn container_owner(&self, container_dir: &Path) -> Option<String>;
     fn open_app(&self, path: &Path) -> Result<()>;
     fn kill_matching(&self, needle: &str) -> Result<()>;
     fn euid_is_root(&self) -> bool;
@@ -45,9 +52,11 @@ impl SystemOps for RealSystemOps {
     fn clear_xattr(&self, path: &Path) -> Result<()> {
         run(Command::new("xattr").arg("-cr").arg(path))
     }
-    fn codesign(&self, path: &Path) -> Result<()> {
+    fn codesign(&self, path: &Path, entitlements_plist: &Path) -> Result<()> {
         let out = Command::new("codesign")
             .args(["--force", "--deep", "--sign", "-", "--timestamp=none"])
+            .arg("--entitlements")
+            .arg(entitlements_plist)
             .arg(path)
             .output()?;
         if out.status.success() {
@@ -62,6 +71,14 @@ impl SystemOps for RealSystemOps {
         run(Command::new("codesign")
             .args(["--verify", "--deep", "--strict"])
             .arg(path))
+    }
+    fn container_owner(&self, container_dir: &Path) -> Option<String> {
+        let meta = container_dir.join(".com.apple.containermanagerd.metadata.plist");
+        let val = plist::Value::from_file(&meta).ok()?;
+        val.as_dictionary()?
+            .get("MCMMetadataIdentifier")?
+            .as_string()
+            .map(str::to_owned)
     }
     fn open_app(&self, path: &Path) -> Result<()> {
         run(Command::new("open").arg(path))
@@ -94,6 +111,7 @@ mod mock {
     pub struct MockSystemOps {
         calls: RefCell<Vec<String>>,
         apps: RefCell<HashSet<PathBuf>>,
+        owners: RefCell<std::collections::HashMap<PathBuf, String>>,
         is_root: Cell<bool>,
     }
 
@@ -108,6 +126,7 @@ mod mock {
             MockSystemOps {
                 calls: RefCell::new(Vec::new()),
                 apps: RefCell::new(HashSet::new()),
+                owners: RefCell::new(std::collections::HashMap::new()),
                 is_root: Cell::new(false),
             }
         }
@@ -120,6 +139,12 @@ mod mock {
             } else {
                 self.apps.borrow_mut().remove(path);
             }
+        }
+        /// Record the container-owner bundle id reported for `container_dir`.
+        pub fn set_container_owner(&self, container_dir: &Path, owner: &str) {
+            self.owners
+                .borrow_mut()
+                .insert(container_dir.to_path_buf(), owner.to_string());
         }
         pub fn set_root(&self, v: bool) {
             self.is_root.set(v);
@@ -164,13 +189,18 @@ mod mock {
             self.calls.borrow_mut().push(format!("xattr {path:?}"));
             Ok(())
         }
-        fn codesign(&self, path: &Path) -> Result<()> {
-            self.calls.borrow_mut().push(format!("codesign {path:?}"));
+        fn codesign(&self, path: &Path, entitlements_plist: &Path) -> Result<()> {
+            self.calls.borrow_mut().push(format!(
+                "codesign {path:?} --entitlements {entitlements_plist:?}"
+            ));
             Ok(())
         }
         fn verify_signature(&self, path: &Path) -> Result<()> {
             self.calls.borrow_mut().push(format!("verify {path:?}"));
             Ok(())
+        }
+        fn container_owner(&self, container_dir: &Path) -> Option<String> {
+            self.owners.borrow().get(container_dir).cloned()
         }
         fn open_app(&self, path: &Path) -> Result<()> {
             self.calls.borrow_mut().push(format!("open {path:?}"));
