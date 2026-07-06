@@ -25,3 +25,5 @@ doctor.clt_missing: "Command Line Tools: missing. Signing will fail — run xcod
 doctor.copies_count: "Copies: %{count}"
 doctor.danger_found: "⚠️ Found %{count} dangerous copy(ies). Remove them before they touch your data."
 doctor.all_clear: "All clear. Go build."
+list.empty: "No copies yet. Run `sudo wxemma add` to make one."
+list.header: "%{count} copy(ies)"

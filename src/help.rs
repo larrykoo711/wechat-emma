@@ -1,9 +1,45 @@
-//! Localized `--help` text.
+//! Localized `--help` text and clap-error rendering.
 //!
-//! clap's generated help is a compile-time English string that can't follow the
-//! runtime locale. So we disable clap's auto-help and render our own: a
-//! hand-written Chinese page when the locale is Chinese, and clap's native
-//! English help otherwise.
+//! clap's generated help and errors are compile-time English strings that can't
+//! follow the runtime locale. So we disable clap's auto-help and intercept its
+//! errors: a hand-written Chinese page / Chinese error when the locale is
+//! Chinese, and clap's native English output otherwise.
+
+use std::process::ExitCode;
+
+/// Render a clap parse error (missing arg, unknown command, bad value, or the
+/// help/version display errors) in the resolved locale, and return the exit
+/// code. For English, defer to clap's own rendering.
+pub fn render_clap_error(err: &clap::Error, locale: &str) -> ExitCode {
+    use clap::error::ErrorKind;
+
+    // clap models `--help`/`--version` as "errors"; print to stdout, exit 0.
+    if matches!(
+        err.kind(),
+        ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+    ) {
+        print!("{err}");
+        return ExitCode::SUCCESS;
+    }
+
+    if locale != "zh-CN" {
+        // English: clap's native message is already good.
+        eprint!("{err}");
+        return ExitCode::from(2);
+    }
+
+    let msg = match err.kind() {
+        ErrorKind::MissingRequiredArgument => "少了参数。看看 wxemma --help 里的用法。",
+        ErrorKind::UnknownArgument => "认不出这个选项。跑 wxemma --help 看看有哪些。",
+        ErrorKind::InvalidSubcommand | ErrorKind::NoEquals => {
+            "没这个命令。跑 wxemma --help 看看能用哪些命令。"
+        }
+        ErrorKind::InvalidValue => "这个值不对。跑 wxemma --help 看看该怎么写。",
+        _ => "参数有点问题。跑 wxemma --help 看看正确用法。",
+    };
+    eprintln!("error: {msg}");
+    ExitCode::from(2)
+}
 
 /// The Chinese help page, shown when the resolved locale is `zh-CN`.
 pub fn zh_help() -> &'static str {
