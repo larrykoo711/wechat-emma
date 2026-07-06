@@ -8,14 +8,13 @@ pub fn resolve_locale(
     config_lang: Option<&str>,
     env_lang: Option<&str>,
 ) -> &'static str {
-    for pref in [explicit, config_lang] {
-        if let Some(flag) = pref {
-            return if flag.starts_with("zh") {
-                "zh-CN"
-            } else {
-                "en"
-            };
-        }
+    // First explicit preference (flag, then config) wins; else fall back to LANG.
+    if let Some(flag) = [explicit, config_lang].into_iter().flatten().next() {
+        return if flag.starts_with("zh") {
+            "zh-CN"
+        } else {
+            "en"
+        };
     }
     match env_lang {
         Some(l) if l.starts_with("zh") => "zh-CN",
