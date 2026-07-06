@@ -6,12 +6,17 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "wxemma",
     about = "Run multiple WeChat instances on macOS",
-    disable_version_flag = true
+    disable_version_flag = true,
+    disable_help_flag = true
 )]
 pub struct Cli {
     /// Print the logo and version, then exit.
     #[arg(long, short = 'V', global = true)]
     pub version: bool,
+
+    /// Print help (localized).
+    #[arg(long, short = 'h', global = true)]
+    pub help: bool,
 
     /// Emit machine-readable JSON instead of human text.
     #[arg(long, global = true)]
