@@ -22,12 +22,17 @@ fn version_of<S: SystemOps>(_ops: &S, app: &std::path::Path) -> String {
 
 fn row_for<S: SystemOps>(ctx: &Ctx<S>, set: &InstanceSet<S>, idx: u8) -> InstanceRow {
     let inst = set.instance_for(idx);
+    let running = ctx.ops.is_running(&inst.app_path);
+    let danger = set
+        .danger_tag(idx)
+        .map(|key| rust_i18n::t!(key).to_string());
     InstanceRow {
         index: idx,
         name: inst.display_name.clone(),
         version: version_of(ctx.ops, &inst.app_path),
         note: ctx.cfg.note(idx),
-        running: false,
+        running,
+        danger,
     }
 }
 
@@ -72,7 +77,7 @@ pub fn dispatch<S: SystemOps>(ctx: &mut Ctx<S>, cmd: &Commands) -> Result<Report
                 None => set.existing_indices(),
             };
             if targets.is_empty() {
-                return Err(Error::Usage("no instances to open".into()));
+                return Err(Error::Usage("Nothing to launch — add a copy first.".into()));
             }
             for i in targets {
                 ctx.ops.open_app(&set.app_path_for(i))?;
@@ -90,14 +95,37 @@ pub fn dispatch<S: SystemOps>(ctx: &mut Ctx<S>, cmd: &Commands) -> Result<Report
             Ok(Report::Message("msg.killed".into()))
         }
         Commands::Doctor => {
-            let msg = if ctx.ops.app_exists(&ctx.wechat_app) {
+            let mut lines = Vec::new();
+
+            // WeChat present?
+            lines.push(if ctx.ops.app_exists(&ctx.wechat_app) {
                 rust_i18n::t!("doctor.wechat_found").to_string()
             } else {
                 rust_i18n::t!("doctor.wechat_missing", path = ctx.wechat_app.display()).to_string()
-            };
-            // Doctor text is already localized here, so pass it as a literal
-            // message rather than a catalog key.
-            Ok(Report::Text(msg))
+            });
+
+            // Command Line Tools present? (codesign depends on them.)
+            lines.push(if ctx.ops.clt_installed() {
+                rust_i18n::t!("doctor.clt_ok").to_string()
+            } else {
+                rust_i18n::t!("doctor.clt_missing").to_string()
+            });
+
+            // Copy count + dangerous-copy scan.
+            let set = InstanceSet::new(ctx.ops, &ctx.cfg, ctx.apps_dir.clone());
+            let indices = set.existing_indices();
+            lines.push(rust_i18n::t!("doctor.copies_count", count = indices.len()).to_string());
+            let dangerous = indices
+                .iter()
+                .filter(|i| set.danger_tag(**i).is_some())
+                .count();
+            lines.push(if dangerous > 0 {
+                rust_i18n::t!("doctor.danger_found", count = dangerous).to_string()
+            } else {
+                rust_i18n::t!("doctor.all_clear").to_string()
+            });
+
+            Ok(Report::Text(lines.join("\n")))
         }
         Commands::Add { note } => {
             require_root(ctx)?;
@@ -119,10 +147,12 @@ pub fn dispatch<S: SystemOps>(ctx: &mut Ctx<S>, cmd: &Commands) -> Result<Report
             let idx = match index {
                 Some(i) => *i,
                 None if ctx.yes => {
-                    return Err(Error::Usage("an index is required with --yes".into()));
+                    return Err(Error::Usage(
+                        "With --yes I need an index, e.g. `remove 1`.".into(),
+                    ));
                 }
                 None => {
-                    return Err(Error::Usage("an index is required".into()));
+                    return Err(Error::Usage("Tell me which one — give an index.".into()));
                 }
             };
             let app = set.app_path_for(idx);
@@ -170,6 +200,21 @@ pub fn dispatch<S: SystemOps>(ctx: &mut Ctx<S>, cmd: &Commands) -> Result<Report
                 set.build(i, &ctx.wechat_app)?;
             }
             Ok(Report::Message("msg.rebuilt".into()))
+        }
+        Commands::Lang { value } => {
+            let normalized = if value.starts_with("zh") { "zh" } else { "en" };
+            ctx.cfg.lang = Some(normalized.to_string());
+            ctx.cfg.save_to(&crate::config::default_config_path())?;
+            // Re-apply immediately so the confirmation prints in the new language.
+            crate::i18n::apply(if normalized == "zh" { "zh-CN" } else { "en" });
+            Ok(Report::Message(
+                if normalized == "zh" {
+                    "msg.lang_set_zh"
+                } else {
+                    "msg.lang_set_en"
+                }
+                .into(),
+            ))
         }
         Commands::Completions { .. } => Ok(Report::Text(String::new())),
     }

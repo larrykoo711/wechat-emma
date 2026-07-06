@@ -5,10 +5,14 @@ use clap::{Parser, Subcommand};
 #[derive(Debug, Parser)]
 #[command(
     name = "wxemma",
-    version,
-    about = "Run multiple WeChat instances on macOS"
+    about = "Run multiple WeChat instances on macOS",
+    disable_version_flag = true
 )]
 pub struct Cli {
+    /// Print the logo and version, then exit.
+    #[arg(long, short = 'V', global = true)]
+    pub version: bool,
+
     /// Emit machine-readable JSON instead of human text.
     #[arg(long, global = true)]
     pub json: bool,
@@ -26,10 +30,10 @@ pub struct Cli {
     pub verbose: bool,
 
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Option<Commands>,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, Clone, Subcommand)]
 pub enum Commands {
     /// Create one instance at the smallest free index.
     Add {
@@ -56,6 +60,8 @@ pub enum Commands {
     Kill,
     /// Check the environment is ready.
     Doctor,
+    /// Set the preferred language (`zh` or `en`), saved to the config file.
+    Lang { value: String },
     /// Emit a shell completion script.
     Completions { shell: clap_complete::Shell },
 }
@@ -70,7 +76,7 @@ mod tests {
         let cli = Cli::parse_from(["wxemma", "add", "--note", "work"]);
         assert!(!cli.json);
         match cli.command {
-            Commands::Add { note } => assert_eq!(note.as_deref(), Some("work")),
+            Some(Commands::Add { note }) => assert_eq!(note.as_deref(), Some("work")),
             _ => panic!("expected add"),
         }
     }
@@ -80,11 +86,18 @@ mod tests {
         let cli = Cli::parse_from(["wxemma", "--json", "-y", "remove", "2", "--purge-data"]);
         assert!(cli.json && cli.yes);
         match cli.command {
-            Commands::Remove { index, purge_data } => {
+            Some(Commands::Remove { index, purge_data }) => {
                 assert_eq!(index, Some(2));
                 assert!(purge_data);
             }
             _ => panic!("expected remove"),
         }
+    }
+
+    #[test]
+    fn version_flag_parses_without_subcommand() {
+        let cli = Cli::parse_from(["wxemma", "--version"]);
+        assert!(cli.version);
+        assert!(cli.command.is_none());
     }
 }
