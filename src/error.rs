@@ -27,6 +27,9 @@ pub enum Error {
     #[error("codesign failed: {0}")]
     CodesignFailed(String),
 
+    #[error("refused to purge data: container is owned by {found}, not {expected} (protecting the original app's data)")]
+    RefusedForeignContainer { expected: String, found: String },
+
     #[error("{0}")]
     System(String),
 

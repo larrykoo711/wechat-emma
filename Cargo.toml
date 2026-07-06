@@ -1,6 +1,6 @@
 [package]
 name = "wechat-emma"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "A macOS efficiency CLI for running multiple WeChat instances"
 license = "MIT"
@@ -36,6 +36,7 @@ dirs = "5"
 
 [dev-dependencies]
 tempfile = "3"
+dirs = "5"
 # Self-reference with the testing feature so integration tests in tests/ can use
 # MockSystemOps, which is gated behind cfg(any(test, feature = "testing")).
 wechat-emma = { path = ".", features = ["testing"] }
