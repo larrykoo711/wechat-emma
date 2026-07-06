@@ -37,7 +37,7 @@ pub fn render_clap_error(err: &clap::Error, locale: &str) -> ExitCode {
         ErrorKind::InvalidValue => "这个值不对。跑 wxemma --help 看看该怎么写。",
         _ => "参数有点问题。跑 wxemma --help 看看正确用法。",
     };
-    eprintln!("error: {msg}");
+    eprintln!("{} {msg}", rust_i18n::t!("err.prefix"));
     ExitCode::from(2)
 }
 
@@ -59,10 +59,10 @@ pub fn zh_help() -> &'static str {
   kill         把所有副本进程关掉（原版不动）
   doctor       体检：环境齐不齐、有没有危险副本
   lang         设置界面语言（zh 或 en），记到配置里
-  completions  生成 shell 自动补全脚本
+  completions  生成 shell 自动补全脚本（敲命令时按 Tab 自动补全）
 
 选项:
-  -V, --version   打印 logo 和版本号
+  -v, --version   打印 logo 和版本号（-v 和 -V 都行）
       --json      输出机器可读的 JSON（给脚本和 AI 用）
   -y, --yes       全部默认「是」，不再询问（脚本化必备）
       --lang <值>  临时切语言：zh 或 en
@@ -75,7 +75,12 @@ pub fn zh_help() -> &'static str {
 
 提示:
   add / remove / rebuild 需要 sudo。
-  想固定用中文？跑一次 wxemma lang zh，以后就不用每次加 --lang 了。"
+  想固定用中文？跑一次 wxemma lang zh，以后就不用每次加 --lang 了。
+
+自动补全:
+  completions 接一个 shell 名（zsh / bash / fish），把补全脚本输出出来。
+  例（zsh）:  wxemma completions zsh > ~/.zsh/completions/_wxemma
+  装好后敲 wxemma 按 Tab，命令和选项就能自动补全了。"
 }
 
 #[cfg(test)]

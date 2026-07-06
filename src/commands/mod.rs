@@ -77,7 +77,7 @@ pub fn dispatch<S: SystemOps>(ctx: &mut Ctx<S>, cmd: &Commands) -> Result<Report
                 None => set.existing_indices(),
             };
             if targets.is_empty() {
-                return Err(Error::Usage("Nothing to launch — add a copy first.".into()));
+                return Err(Error::NothingToLaunch);
             }
             for i in targets {
                 ctx.ops.open_app(&set.app_path_for(i))?;
@@ -147,12 +147,10 @@ pub fn dispatch<S: SystemOps>(ctx: &mut Ctx<S>, cmd: &Commands) -> Result<Report
             let idx = match index {
                 Some(i) => *i,
                 None if ctx.yes => {
-                    return Err(Error::Usage(
-                        "With --yes I need an index, e.g. `remove 1`.".into(),
-                    ));
+                    return Err(Error::RemoveNeedsIndex { with_yes: true });
                 }
                 None => {
-                    return Err(Error::Usage("Tell me which one — give an index.".into()));
+                    return Err(Error::RemoveNeedsIndex { with_yes: false });
                 }
             };
             let app = set.app_path_for(idx);

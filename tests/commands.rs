@@ -120,7 +120,12 @@ fn remove_with_yes_requires_index() {
         },
     )
     .unwrap_err();
-    assert!(matches!(err, wechat_emma::error::Error::Usage(_)));
+    assert!(matches!(
+        err,
+        wechat_emma::error::Error::RemoveNeedsIndex { with_yes: true }
+    ));
+    // A usage error still exits 2.
+    assert_eq!(err.exit_code(), 2);
 }
 
 #[test]

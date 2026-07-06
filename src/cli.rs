@@ -11,8 +11,8 @@ use clap::{Parser, Subcommand};
     disable_help_subcommand = true
 )]
 pub struct Cli {
-    /// Print the logo and version, then exit.
-    #[arg(long, short = 'V', global = true)]
+    /// Print the logo and version, then exit. Both `-v` and `-V` work.
+    #[arg(long, short = 'V', short_alias = 'v', global = true)]
     pub version: bool,
 
     /// Print help (localized).
@@ -70,7 +70,9 @@ pub enum Commands {
     Lang { value: String },
     /// Show this help.
     Help,
-    /// Emit a shell completion script.
+    /// Emit a shell completion script. Pass a shell (zsh/bash/fish) and redirect
+    /// the output to your completions dir, e.g.
+    /// `wxemma completions zsh > ~/.zsh/completions/_wxemma`.
     Completions { shell: clap_complete::Shell },
 }
 
@@ -107,5 +109,12 @@ mod tests {
         let cli = Cli::parse_from(["wxemma", "--version"]);
         assert!(cli.version);
         assert!(cli.command.is_none());
+    }
+
+    #[test]
+    fn both_version_short_flags_parse() {
+        // Users reach for both `-v` and `-V`; both must map to version.
+        assert!(Cli::parse_from(["wxemma", "-v"]).version);
+        assert!(Cli::parse_from(["wxemma", "-V"]).version);
     }
 }

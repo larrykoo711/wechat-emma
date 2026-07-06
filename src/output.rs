@@ -123,13 +123,18 @@ pub fn render(report: &Report, json: bool) -> String {
     }
 }
 
-pub fn render_error(code: &str, message: &str, json: bool) -> String {
+/// Render an error for output. `json_message` is the stable English contract for
+/// the machine-facing `error.message`; `human_message` is the localized text
+/// shown to people, prefixed with the localized `error:` label.
+pub fn render_error(code: &str, json_message: &str, human_message: &str, json: bool) -> String {
     if json {
-        let body =
-            serde_json::json!({ "ok": false, "error": { "code": code, "message": message } });
+        let body = serde_json::json!({
+            "ok": false,
+            "error": { "code": code, "message": json_message }
+        });
         serde_json::to_string_pretty(&body).unwrap()
     } else {
-        format!("error: {message}")
+        format!("{} {human_message}", t!("err.prefix"))
     }
 }
 
@@ -147,10 +152,20 @@ mod tests {
 
     #[test]
     fn json_error_is_wrapped_with_ok_false() {
-        let s = render_error("SlotsFull", "no free slots", true);
+        let s = render_error("SlotsFull", "no free slots", "已满", true);
         let v: serde_json::Value = serde_json::from_str(&s).unwrap();
         assert_eq!(v["ok"], serde_json::json!(false));
         assert_eq!(v["error"]["code"], serde_json::json!("SlotsFull"));
+        // JSON carries the stable English contract, not the localized text.
+        assert_eq!(v["error"]["message"], serde_json::json!("no free slots"));
+    }
+
+    #[test]
+    fn human_error_uses_localized_prefix() {
+        rust_i18n::set_locale("zh-CN");
+        let s = render_error("SlotsFull", "no free slots", "位置已满", false);
+        assert!(s.contains("错误："));
+        assert!(s.contains("位置已满"));
     }
 
     fn row(index: u8, danger: Option<&str>) -> InstanceRow {

@@ -9,9 +9,13 @@ pub fn startup_banner() -> String {
     )
 }
 
-/// The string printed for `--version`: logo plus version.
+/// The string printed for `--version`: logo, version, and a two-line slogan.
 pub fn version_string() -> String {
-    format!("{}\nwxemma v{}", LOGO, env!("CARGO_PKG_VERSION"))
+    format!(
+        "{}\n  wxemma v{}\n\n  一台 Mac，几个微信，各登各的号，互不打架。\n  数据各写各的，动不到你原版的聊天记录 · MIT · 仅供学习交流",
+        LOGO,
+        env!("CARGO_PKG_VERSION")
+    )
 }
 
 /// `ansi_shadow`-style "Wx Emma" logo — bold solid-block glyphs with a shadow.

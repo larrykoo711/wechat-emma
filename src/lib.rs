@@ -126,9 +126,10 @@ pub fn run() -> ExitCode {
                 .interact_text()
                 .unwrap_or(0);
             if !existing.contains(&idx) {
+                let e = error::Error::InstanceNotFound(idx);
                 eprintln!(
                     "{}",
-                    output::render_error("InstanceNotFound", "invalid index", cli.json)
+                    output::render_error("InstanceNotFound", &e.to_string(), &e.i18n(), cli.json)
                 );
                 return ExitCode::from(2);
             }
@@ -167,7 +168,11 @@ fn finish(result: error::Result<output::Report>, json: bool) -> ExitCode {
         Err(e) => {
             let code = format!("{e:?}");
             let code = code.split_whitespace().next().unwrap_or("Error");
-            eprintln!("{}", output::render_error(code, &e.to_string(), json));
+            // JSON gets the stable English message; humans get the localized one.
+            eprintln!(
+                "{}",
+                output::render_error(code, &e.to_string(), &e.i18n(), json)
+            );
             ExitCode::from(e.exit_code())
         }
     }
