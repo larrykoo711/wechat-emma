@@ -185,6 +185,14 @@ mod mock {
             self.apps.borrow().contains(path)
         }
         fn ditto(&self, src: &Path, dst: &Path) -> Result<()> {
+            // Safety rail: the mock materializes a real bundle on disk, so a test
+            // that points its apps dir at the live /Applications would litter the
+            // user's real machine with fake copies. Refuse loudly instead of
+            // silently polluting the system. Tests MUST use a tempdir.
+            assert!(
+                !dst.starts_with("/Applications") && !dst.starts_with("/System"),
+                "mock ditto refuses to write to a real system dir: {dst:?} — use a tempdir"
+            );
             self.calls
                 .borrow_mut()
                 .push(format!("ditto {src:?} {dst:?}"));
@@ -259,12 +267,15 @@ mod tests {
 
     #[test]
     fn mock_records_ditto_and_creates_app() {
+        // Use a tempdir: the mock ditto writes a real bundle to disk, and the
+        // safety rail forbids writing under /Applications.
+        let dir = tempfile::tempdir().unwrap();
         let m = MockSystemOps::new();
-        let src = Path::new("/Applications/WeChat.app");
-        let dst = Path::new("/Applications/WeChat-B1.app");
-        m.set_app(src, true);
-        m.ditto(src, dst).unwrap();
-        assert!(m.app_exists(dst));
+        let src = dir.path().join("WeChat.app");
+        let dst = dir.path().join("WeChat-B1.app");
+        m.set_app(&src, true);
+        m.ditto(&src, &dst).unwrap();
+        assert!(m.app_exists(&dst));
         assert!(m.calls().iter().any(|c| c.contains("ditto")));
     }
 

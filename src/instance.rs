@@ -135,33 +135,36 @@ mod tests {
     use crate::sysops::MockSystemOps;
     use std::path::PathBuf;
 
-    fn set_with(existing: &[u8]) -> (MockSystemOps, Config, PathBuf) {
+    /// Returns the tempdir too so the caller keeps it alive for the test's
+    /// duration. Never use a real system path here — the mock writes to disk.
+    fn set_with(existing: &[u8]) -> (MockSystemOps, Config, PathBuf, tempfile::TempDir) {
         let ops = MockSystemOps::new();
         let cfg = Config::default();
-        let apps = PathBuf::from("/Applications");
+        let dir = tempfile::tempdir().unwrap();
+        let apps = dir.path().to_path_buf();
         for i in existing {
             ops.set_app(&apps.join(format!("WeChat-B{i}.app")), true);
         }
-        (ops, cfg, apps)
+        (ops, cfg, apps, dir)
     }
 
     #[test]
     fn next_free_fills_smallest_gap() {
-        let (ops, cfg, apps) = set_with(&[1, 3]);
+        let (ops, cfg, apps, _dir) = set_with(&[1, 3]);
         let set = InstanceSet::new(&ops, &cfg, apps);
         assert_eq!(set.next_free_index().unwrap(), 2);
     }
 
     #[test]
     fn next_free_from_empty_is_one() {
-        let (ops, cfg, apps) = set_with(&[]);
+        let (ops, cfg, apps, _dir) = set_with(&[]);
         let set = InstanceSet::new(&ops, &cfg, apps);
         assert_eq!(set.next_free_index().unwrap(), 1);
     }
 
     #[test]
     fn full_returns_slots_full() {
-        let (ops, cfg, apps) = set_with(&[1, 2, 3, 4, 5, 6, 7]);
+        let (ops, cfg, apps, _dir) = set_with(&[1, 2, 3, 4, 5, 6, 7]);
         let set = InstanceSet::new(&ops, &cfg, apps);
         assert!(matches!(
             set.next_free_index(),
@@ -171,7 +174,7 @@ mod tests {
 
     #[test]
     fn instance_for_builds_paths_and_ids() {
-        let (ops, cfg, apps) = set_with(&[]);
+        let (ops, cfg, apps, _dir) = set_with(&[]);
         let set = InstanceSet::new(&ops, &cfg, apps);
         let inst = set.instance_for(3);
         assert_eq!(inst.bundle_id, "com.tencent.xinWeChat.multi3");
