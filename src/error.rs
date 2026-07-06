@@ -6,28 +6,31 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("usage error: {0}")]
+    #[error("{0}")]
     Usage(String),
 
-    #[error("this operation requires administrator privileges (run with sudo)")]
+    #[error("Need admin rights for this. Add sudo and try again.")]
     SudoRequired,
 
-    #[error("WeChat is not installed at {0}")]
+    #[error("No WeChat at {0}. Install the official app first.")]
     WeChatNotFound(String),
 
-    #[error("instance {0} does not exist")]
+    #[error("There's no copy {0}. Run `wxemma list` to see what you've got.")]
     InstanceNotFound(u8),
 
-    #[error("all {0} instance slots are in use")]
+    #[error("All {0} slots are taken. Remove one before adding another.")]
     SlotsFull(u8),
 
-    #[error("instance note must be ASCII only: {0:?}")]
+    #[error("Notes are ASCII only (no Chinese): {0:?}. Keep it short and simple.")]
     InvalidNote(String),
 
     #[error("codesign failed: {0}")]
     CodesignFailed(String),
 
-    #[error("refused to purge data: container is owned by {found}, not {expected} (protecting the original app's data)")]
+    #[error("Stopped before this could hurt you: the copy is still on bundle id {found}, not {expected}. A copy on the original's id would share — and could corrupt — your real WeChat data. Nothing was created.")]
+    RebrandFailed { expected: String, found: String },
+
+    #[error("Not deleting that. This data belongs to {found}, not {expected} — looks like your real WeChat. Your chat history stays put.")]
     RefusedForeignContainer { expected: String, found: String },
 
     #[error("{0}")]

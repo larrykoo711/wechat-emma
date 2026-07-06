@@ -2,11 +2,11 @@
 
 rust_i18n::i18n!("locales", fallback = "en");
 
+pub mod banner;
 pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod data;
-pub mod entitlements;
 pub mod error;
 pub mod i18n;
 pub mod instance;
@@ -22,13 +22,37 @@ pub fn run() -> ExitCode {
     use clap::Parser;
     let cli = cli::Cli::parse();
 
-    let locale = i18n::resolve_locale(cli.lang.as_deref(), std::env::var("LANG").ok().as_deref());
+    // Load config first so a saved `lang` preference can drive locale resolution.
+    let cfg = config::Config::load_from(&config::default_config_path()).unwrap_or_default();
+    let locale = i18n::resolve_locale(
+        cli.lang.as_deref(),
+        cfg.lang.as_deref(),
+        std::env::var("LANG").ok().as_deref(),
+    );
     i18n::apply(locale);
 
-    let cfg = config::Config::load_from(&config::default_config_path()).unwrap_or_default();
+    // `--version` / `-V`: print the logo and version, then exit.
+    if cli.version {
+        println!("{}", banner::version_string());
+        return ExitCode::SUCCESS;
+    }
+
+    // No subcommand: show the startup banner (unless JSON was requested).
+    let Some(command) = cli.command.clone() else {
+        if cli.json {
+            println!(
+                "{}",
+                output::render(&output::Report::Text(String::new()), true)
+            );
+        } else {
+            println!("{}", banner::startup_banner());
+            println!("  上手就一句: wxemma add    全部招式: wxemma --help");
+        }
+        return ExitCode::SUCCESS;
+    };
 
     // Completions are handled before building a full context.
-    if let cli::Commands::Completions { shell } = &cli.command {
+    if let cli::Commands::Completions { shell } = &command {
         use clap::CommandFactory;
         let mut cmd = cli::Cli::command();
         clap_complete::generate(*shell, &mut cmd, "wxemma", &mut std::io::stdout());
@@ -49,7 +73,7 @@ pub fn run() -> ExitCode {
     if let cli::Commands::Remove {
         index: None,
         purge_data,
-    } = &cli.command
+    } = &command
     {
         if !cli.yes {
             let existing = {
@@ -104,7 +128,7 @@ pub fn run() -> ExitCode {
         }
     }
 
-    finish(commands::dispatch(&mut ctx, &cli.command), cli.json)
+    finish(commands::dispatch(&mut ctx, &command), cli.json)
 }
 
 fn finish(result: error::Result<output::Report>, json: bool) -> ExitCode {

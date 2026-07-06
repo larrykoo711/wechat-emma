@@ -9,10 +9,10 @@ pub trait SystemOps {
     fn ditto(&self, src: &Path, dst: &Path) -> Result<()>;
     fn remove_dir(&self, path: &Path) -> Result<()>;
     fn clear_xattr(&self, path: &Path) -> Result<()>;
-    /// Ad-hoc re-sign `path`, carrying the entitlements in `entitlements_plist`
-    /// (an on-disk plist). Keeping `app-sandbox` is what isolates the copy into
-    /// its own container; see the `entitlements` module.
-    fn codesign(&self, path: &Path, entitlements_plist: &Path) -> Result<()>;
+    /// Bare ad-hoc re-sign `path` (no entitlements). Data isolation comes from
+    /// the copy's bundle id, not a sandbox — adding `app-sandbox` crashes
+    /// WeChat's WeChatAppEx font engine on launch, so we deliberately do not.
+    fn codesign(&self, path: &Path) -> Result<()>;
     fn verify_signature(&self, path: &Path) -> Result<()>;
     /// The container-owner bundle id recorded in a sandbox container's metadata,
     /// or `None` if the path has no readable container metadata. Used by
@@ -20,6 +20,10 @@ pub trait SystemOps {
     fn container_owner(&self, container_dir: &Path) -> Option<String>;
     fn open_app(&self, path: &Path) -> Result<()>;
     fn kill_matching(&self, needle: &str) -> Result<()>;
+    /// Whether any process is running from `app_dir`'s MacOS folder.
+    fn is_running(&self, app_dir: &Path) -> bool;
+    /// Whether Xcode Command Line Tools are installed (codesign needs them).
+    fn clt_installed(&self) -> bool;
     fn euid_is_root(&self) -> bool;
 }
 
@@ -52,11 +56,9 @@ impl SystemOps for RealSystemOps {
     fn clear_xattr(&self, path: &Path) -> Result<()> {
         run(Command::new("xattr").arg("-cr").arg(path))
     }
-    fn codesign(&self, path: &Path, entitlements_plist: &Path) -> Result<()> {
+    fn codesign(&self, path: &Path) -> Result<()> {
         let out = Command::new("codesign")
             .args(["--force", "--deep", "--sign", "-", "--timestamp=none"])
-            .arg("--entitlements")
-            .arg(entitlements_plist)
             .arg(path)
             .output()?;
         if out.status.success() {
@@ -88,6 +90,23 @@ impl SystemOps for RealSystemOps {
         let _ = Command::new("pkill").arg("-f").arg(needle).output()?;
         Ok(())
     }
+    fn is_running(&self, app_dir: &Path) -> bool {
+        // pgrep exits 0 when at least one process matches the MacOS exec path.
+        Command::new("pgrep")
+            .arg("-f")
+            .arg(format!("{}/Contents/MacOS/", app_dir.display()))
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+    fn clt_installed(&self) -> bool {
+        // `xcode-select -p` exits 0 and prints the path when CLT is present.
+        Command::new("xcode-select")
+            .arg("-p")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
     fn euid_is_root(&self) -> bool {
         // Safe: geteuid has no failure mode.
         unsafe { libc_geteuid() == 0 }
@@ -112,6 +131,7 @@ mod mock {
         calls: RefCell<Vec<String>>,
         apps: RefCell<HashSet<PathBuf>>,
         owners: RefCell<std::collections::HashMap<PathBuf, String>>,
+        running: RefCell<HashSet<PathBuf>>,
         is_root: Cell<bool>,
     }
 
@@ -127,7 +147,16 @@ mod mock {
                 calls: RefCell::new(Vec::new()),
                 apps: RefCell::new(HashSet::new()),
                 owners: RefCell::new(std::collections::HashMap::new()),
+                running: RefCell::new(HashSet::new()),
                 is_root: Cell::new(false),
+            }
+        }
+        /// Mark `app_dir` as having a running process.
+        pub fn set_running(&self, app_dir: &Path, running: bool) {
+            if running {
+                self.running.borrow_mut().insert(app_dir.to_path_buf());
+            } else {
+                self.running.borrow_mut().remove(app_dir);
             }
         }
         pub fn calls(&self) -> Vec<String> {
@@ -189,10 +218,8 @@ mod mock {
             self.calls.borrow_mut().push(format!("xattr {path:?}"));
             Ok(())
         }
-        fn codesign(&self, path: &Path, entitlements_plist: &Path) -> Result<()> {
-            self.calls.borrow_mut().push(format!(
-                "codesign {path:?} --entitlements {entitlements_plist:?}"
-            ));
+        fn codesign(&self, path: &Path) -> Result<()> {
+            self.calls.borrow_mut().push(format!("codesign {path:?}"));
             Ok(())
         }
         fn verify_signature(&self, path: &Path) -> Result<()> {
@@ -209,6 +236,12 @@ mod mock {
         fn kill_matching(&self, needle: &str) -> Result<()> {
             self.calls.borrow_mut().push(format!("pkill {needle}"));
             Ok(())
+        }
+        fn is_running(&self, app_dir: &Path) -> bool {
+            self.running.borrow().contains(app_dir)
+        }
+        fn clt_installed(&self) -> bool {
+            true
         }
         fn euid_is_root(&self) -> bool {
             self.is_root.get()
