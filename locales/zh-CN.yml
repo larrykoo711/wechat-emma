@@ -25,3 +25,5 @@ doctor.clt_missing: "命令行工具：缺失。签名会失败，先跑 xcode-s
 doctor.copies_count: "副本：%{count} 个"
 doctor.danger_found: "⚠️ 发现 %{count} 个危险副本，赶紧 remove 掉，别让它们碰你的数据"
 doctor.all_clear: "一切正常，可以开干。"
+list.empty: "还没有副本。跑一句 sudo wxemma add 就有了。"
+list.header: "共 %{count} 个副本"

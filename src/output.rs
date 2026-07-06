@@ -8,6 +8,11 @@ use owo_colors::OwoColorize;
 use rust_i18n::t;
 use serde::Serialize;
 
+/// A dim horizontal rule to separate a header from the rows below it.
+fn rule() -> String {
+    "──────────────────────────────".dimmed().to_string()
+}
+
 /// One human-readable instance line. A dangerous copy is rendered in red with a
 /// warning so it can't be mistaken for a healthy instance.
 fn render_row(r: &InstanceRow) -> String {
@@ -81,7 +86,10 @@ pub fn render(report: &Report, json: bool) -> String {
             }
         }
         Report::List(rows) => {
-            let mut out = String::new();
+            if rows.is_empty() {
+                return t!("list.empty").to_string();
+            }
+            let mut out = format!("{}\n{}\n", t!("list.header", count = rows.len()), rule());
             for r in rows {
                 out.push_str(&render_row(r));
                 out.push('\n');
@@ -93,13 +101,22 @@ pub fn render(report: &Report, json: bool) -> String {
             rows,
             stale,
         } => {
-            let mut out = format!("{}\n", t!("status.original", version = original_version));
-            for r in rows {
-                out.push_str(&render_row(r));
-                out.push('\n');
+            let mut out = format!(
+                "{}\n{}\n",
+                t!("status.original", version = original_version),
+                rule()
+            );
+            if rows.is_empty() {
+                out.push_str(&t!("list.empty"));
+            } else {
+                for r in rows {
+                    out.push_str(&render_row(r));
+                    out.push('\n');
+                }
             }
             if *stale {
-                out.push_str(&t!("status.stale"));
+                out.push('\n');
+                out.push_str(&t!("status.stale").yellow().to_string());
             }
             out.trim_end().to_string()
         }

@@ -18,19 +18,42 @@ pub mod sysops;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+/// Extract the value of a `--lang` flag from raw args, for locale resolution
+/// before clap parsing runs (so clap's own errors can be localized).
+fn lang_from_args<I: Iterator<Item = String>>(args: I) -> Option<String> {
+    let args: Vec<String> = args.collect();
+    for (i, a) in args.iter().enumerate() {
+        if let Some(v) = a.strip_prefix("--lang=") {
+            return Some(v.to_string());
+        }
+        if a == "--lang" {
+            return args.get(i + 1).cloned();
+        }
+    }
+    None
+}
+
 /// Parse arguments, dispatch, and map the outcome to a process exit code.
 pub fn run() -> ExitCode {
     use clap::Parser;
-    let cli = cli::Cli::parse();
 
-    // Load config first so a saved `lang` preference can drive locale resolution.
+    // Resolve locale from raw args + config BEFORE clap parsing, so we can render
+    // clap's own errors (missing args, unknown command, help) in the right
+    // language even when parsing fails.
     let cfg = config::Config::load_from(&config::default_config_path()).unwrap_or_default();
+    let flag_lang = lang_from_args(std::env::args());
     let locale = i18n::resolve_locale(
-        cli.lang.as_deref(),
+        flag_lang.as_deref(),
         cfg.lang.as_deref(),
         std::env::var("LANG").ok().as_deref(),
     );
     i18n::apply(locale);
+
+    // Parse, but intercept clap's built-in output so we can localize it.
+    let cli = match cli::Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(err) => return help::render_clap_error(&err, locale),
+    };
 
     // `--version` / `-V`: print the logo and version, then exit.
     if cli.version {
@@ -38,9 +61,11 @@ pub fn run() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    // `--help` / `-h`: Chinese page when the locale is Chinese, else clap's
-    // native English help. (clap's auto-help is disabled so we control this.)
-    if cli.help {
+    // `--help`/`-h`, the `help` subcommand, OR no subcommand at all: show help.
+    // (Bare `wxemma` behaves like `wxemma -h` — the friendliest default.)
+    let wants_help =
+        cli.help || cli.command.is_none() || matches!(cli.command, Some(cli::Commands::Help));
+    if wants_help {
         if locale == "zh-CN" {
             println!("{}\n{}", banner::startup_banner(), help::zh_help());
         } else {
@@ -51,19 +76,7 @@ pub fn run() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    // No subcommand: show the startup banner (unless JSON was requested).
-    let Some(command) = cli.command.clone() else {
-        if cli.json {
-            println!(
-                "{}",
-                output::render(&output::Report::Text(String::new()), true)
-            );
-        } else {
-            println!("{}", banner::startup_banner());
-            println!("  上手就一句: wxemma add    全部招式: wxemma --help");
-        }
-        return ExitCode::SUCCESS;
-    };
+    let command = cli.command.clone().expect("checked by wants_help above");
 
     // Completions are handled before building a full context.
     if let cli::Commands::Completions { shell } = &command {
